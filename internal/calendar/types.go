@@ -3,6 +3,7 @@ package calendar
 import (
 	"net/http"
 
+	"github.com/go-chi/render"
 	"k8s.io/utils/ptr"
 )
 
@@ -30,7 +31,10 @@ type BaseResponse struct {
 	Error ErrorResponse `json:"error,omitzero"`
 }
 
-func (b BaseResponse) Render(http.ResponseWriter, *http.Request) error {
+func (b BaseResponse) Render(_ http.ResponseWriter, r *http.Request) error {
+	if b.Error.Status != 0 {
+		render.Status(r, b.Error.Status)
+	}
 	return nil
 }
 
@@ -53,6 +57,15 @@ func (i *Request) Bind(*http.Request) error {
 }
 
 type ErrorResponse struct {
-	Error   bool   `json:"error"`
+	Status  int    `json:"-"`
 	Message string `json:"message"`
+}
+
+func NewErrorResponse(status int, message string) BaseResponse {
+	return BaseResponse{
+		Error: ErrorResponse{
+			Status:  status,
+			Message: message,
+		},
+	}
 }

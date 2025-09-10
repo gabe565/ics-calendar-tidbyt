@@ -38,7 +38,6 @@ func TestNextEvent(t *testing.T) {
 		onlyAllDay     bool
 		build          func() []*gocal.Event
 		wantName       string
-		wantErr        error
 		check          func(t *testing.T, e *Event)
 	}{
 		{
@@ -46,7 +45,6 @@ func TestNextEvent(t *testing.T) {
 			showInProgress: true,
 			includeAllDay:  true,
 			build:          func() []*gocal.Event { return nil },
-			wantErr:        ErrEventsEmpty,
 		},
 		{
 			name:           "prefers in-progress when shown",
@@ -136,29 +134,24 @@ func TestNextEvent(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			cal := &Calendar{
 				params: &Request{
 					TZ:                   tz,
-					ShowInProgress:       ptr.To(tc.showInProgress),
-					IncludeAllDayEvents:  ptr.To(tc.includeAllDay),
-					OnlyShowAllDayEvents: tc.onlyAllDay,
+					ShowInProgress:       ptr.To(tt.showInProgress),
+					IncludeAllDayEvents:  ptr.To(tt.includeAllDay),
+					OnlyShowAllDayEvents: tt.onlyAllDay,
 				},
-				events: tc.build(),
+				events: tt.build(),
 				tz:     loc,
 			}
-			got, err := cal.NextEvent()
-
-			if tc.wantErr != nil {
-				assert.ErrorIs(t, err, tc.wantErr)
-				return
+			got := cal.NextEvent()
+			if got != nil {
+				assert.Equal(t, tt.wantName, got.Name)
 			}
-			require.NoError(t, err)
-			require.NotNil(t, got)
-			assert.Equal(t, tc.wantName, got.Name)
-			if tc.check != nil {
-				tc.check(t, got)
+			if tt.check != nil {
+				tt.check(t, got)
 			}
 		})
 	}

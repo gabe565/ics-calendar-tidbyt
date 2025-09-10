@@ -13,15 +13,12 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-var (
-	ErrUpstreamStatus = errors.New("upstream status")
-	ErrEventsEmpty    = errors.New("events is empty")
-)
+var ErrUpstreamStatus = errors.New("upstream status")
 
 func NewCalendarRequest(r *http.Request) (*Calendar, error) {
 	params := &Request{}
 	if err := render.Bind(r, params); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	tz, err := time.LoadLocation(params.TZ)
@@ -90,11 +87,7 @@ func (c *Calendar) Parse() error {
 	return nil
 }
 
-func (c *Calendar) NextEvent() (*Event, error) {
-	if len(c.events) == 0 {
-		return nil, ErrEventsEmpty
-	}
-
+func (c *Calendar) NextEvent() *Event {
 	now := time.Now().In(c.tz)
 
 	c.events = slices.DeleteFunc(c.events, func(event *gocal.Event) bool {
@@ -123,11 +116,11 @@ func (c *Calendar) NextEvent() (*Event, error) {
 	}
 
 	if len(c.events) == 0 {
-		return nil, ErrEventsEmpty
+		return nil
 	}
 
 	event := c.events[0]
-	next := &Event{
+	return &Event{
 		Name:     event.Summary,
 		Start:    event.Start.Unix(),
 		End:      event.End.Unix(),
@@ -143,7 +136,6 @@ func (c *Calendar) NextEvent() (*Event, error) {
 			IsAllDay:          isAllDay(event),
 		},
 	}
-	return next, nil
 }
 
 // isAllDay verifies that Start is midnight and End is one second before midnight.

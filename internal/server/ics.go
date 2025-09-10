@@ -1,7 +1,7 @@
 package server
 
 import (
-	"errors"
+	"log/slog"
 	"net/http"
 
 	"gabe565.com/ics-calendar-tidbyt/internal/calendar"
@@ -12,14 +12,22 @@ func ICS() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cal, err := calendar.NewCalendarRequest(r)
 		if err != nil {
-			panic(err)
+			slog.Error("Failed to fetch calendar", "error", err)
+			_ = render.Render(w, r,
+				calendar.NewErrorResponse(http.StatusInternalServerError, "Failed to fetch calendar"),
+			)
+			return
 		}
 		defer func() {
 			_ = cal.Close()
 		}()
 
 		if err := cal.Parse(); err != nil {
-			panic(err)
+			slog.Error("Failed to parse calendar", "error", err)
+			_ = render.Render(w, r,
+				calendar.NewErrorResponse(http.StatusInternalServerError, "Failed to parse calendar"),
+			)
+			return
 		}
 
 		if cal.Len() == 0 {
@@ -27,15 +35,12 @@ func ICS() http.HandlerFunc {
 			return
 		}
 
-		nextEvent, err := cal.NextEvent()
-		if err != nil {
-			if errors.Is(err, calendar.ErrEventsEmpty) {
-				_ = render.Render(w, r, calendar.BaseResponse{})
-				return
-			}
-			panic(err)
+		next := cal.NextEvent()
+		if next == nil {
+			_ = render.Render(w, r, calendar.BaseResponse{})
+			return
 		}
 
-		_ = render.Render(w, r, calendar.BaseResponse{Event: *nextEvent})
+		_ = render.Render(w, r, calendar.BaseResponse{Event: *next})
 	}
 }
