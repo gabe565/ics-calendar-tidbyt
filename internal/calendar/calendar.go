@@ -128,11 +128,11 @@ func (c *Calendar) NextEvent() (*Event, error) {
 
 	event := c.events[0]
 	next := &Event{
-		Name:      event.Summary,
-		StartTime: event.Start.Unix(),
-		EndTime:   event.End.Unix(),
-		Location:  &event.Location,
-		Detail: &EventDetail{
+		Name:     event.Summary,
+		Start:    event.Start.Unix(),
+		End:      event.End.Unix(),
+		Location: event.Location,
+		Detail: EventDetail{
 			IsToday:           dateEqual(now, *event.Start),
 			IsTomorrow:        dateEqual(now.Add(24*time.Hour), *event.Start),
 			IsThisWeek:        now.Add(7 * 24 * time.Hour).After(*event.Start),
@@ -142,7 +142,6 @@ func (c *Calendar) NextEvent() (*Event, error) {
 			InProgress:        event.Start.Before(now),
 			IsAllDay:          isAllDay(event),
 		},
-		IsAllDay: isAllDay(event),
 	}
 	return next, nil
 }

@@ -7,12 +7,11 @@ import (
 )
 
 type Event struct {
-	Name      string
-	StartTime int64
-	EndTime   int64
-	Location  *string
-	Detail    *EventDetail
-	IsAllDay  bool
+	Name     string      `json:"name"`
+	Start    int64       `json:"start"`
+	End      int64       `json:"end"`
+	Location string      `json:"location,omitzero"`
+	Detail   EventDetail `json:"detail"`
 }
 
 type EventDetail struct {
@@ -27,8 +26,8 @@ type EventDetail struct {
 }
 
 type BaseResponse struct {
-	Data  *Response      `json:"data"`
-	Error *ErrorResponse `json:"message"`
+	Event Event         `json:"data,omitzero"`
+	Error ErrorResponse `json:"error,omitzero"`
 }
 
 func (b BaseResponse) Render(http.ResponseWriter, *http.Request) error {
@@ -56,12 +55,4 @@ func (i *Request) Bind(*http.Request) error {
 type ErrorResponse struct {
 	Error   bool   `json:"error"`
 	Message string `json:"message"`
-}
-
-type Response struct {
-	Name      string       `json:"name"`
-	StartTime int64        `json:"start"`
-	EndTime   int64        `json:"end"`
-	Location  *string      `json:"location"`
-	Detail    *EventDetail `json:"detail"`
 }

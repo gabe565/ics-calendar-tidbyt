@@ -36,25 +36,6 @@ func ICS() http.HandlerFunc {
 			panic(err)
 		}
 
-		response := calendar.BaseResponse{
-			Data: &calendar.Response{
-				Name:      nextEvent.Name,
-				StartTime: nextEvent.StartTime,
-				EndTime:   nextEvent.EndTime,
-				Location:  nextEvent.Location,
-				Detail: &calendar.EventDetail{
-					IsToday:           nextEvent.Detail.IsToday,
-					IsTomorrow:        nextEvent.Detail.IsTomorrow,
-					IsThisWeek:        nextEvent.Detail.IsThisWeek,
-					MinutesUntilStart: nextEvent.Detail.MinutesUntilStart,
-					MinutesUntilEnd:   nextEvent.Detail.MinutesUntilEnd,
-					HoursToEnd:        nextEvent.Detail.HoursToEnd,
-					InProgress:        nextEvent.Detail.InProgress,
-					IsAllDay:          nextEvent.Detail.IsAllDay,
-				},
-			},
-		}
-
-		_ = render.Render(w, r, response)
+		_ = render.Render(w, r, calendar.BaseResponse{Event: *nextEvent})
 	}
 }
