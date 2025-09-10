@@ -75,6 +75,7 @@ func (c *Calendar) Parse() error {
 	parser := gocal.NewParser(c.res.Body)
 	parser.Start = ptr.To(time.Now().AddDate(0, 0, -1).In(c.tz))
 	parser.End = ptr.To(time.Now().AddDate(0, 0, 7).In(c.tz))
+	parser.AllDayEventsTZ = c.tz
 
 	if err := parser.Parse(); err != nil {
 		return err
@@ -95,15 +96,6 @@ func (c *Calendar) NextEvent() (*Event, error) {
 	}
 
 	now := time.Now().In(c.tz)
-	offset := getOffset(c.tz)
-
-	for _, event := range c.events {
-		if isAllDay(event) {
-			// Reset times to 00:00 and 23:59 in the target timezone
-			event.Start = ptr.To(event.Start.In(c.tz).Add(-offset))
-			event.End = ptr.To(event.End.In(c.tz).Add(-offset))
-		}
-	}
 
 	c.events = slices.DeleteFunc(c.events, func(event *gocal.Event) bool {
 		eventIsAllDay := isAllDay(event)
@@ -161,14 +153,6 @@ func isAllDay(e *gocal.Event) bool {
 	h1, m1, s1 := e.Start.Clock()
 	h2, m2, s2 := e.End.Clock()
 	return h1 == 0 && m1 == 0 && s1 == 0 && h2 == 23 && m2 == 59 && s2 == 59
-}
-
-// getOffset returns the offset in seconds for a given timezone.
-func getOffset(loc *time.Location) time.Duration {
-	now := time.Now().In(loc)
-	_, offset := now.Zone()
-
-	return time.Duration(offset) * time.Second
 }
 
 func dateEqual(date1, date2 time.Time) bool {
