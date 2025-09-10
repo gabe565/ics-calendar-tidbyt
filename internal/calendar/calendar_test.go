@@ -112,8 +112,10 @@ func TestNextEvent(t *testing.T) {
 			includeAllDay:  false,
 			build: func() []*gocal.Event {
 				allDay := newAllDay(now)
-				dsu := allDay.Start.Unix()
-				timed := newEvent("timed", dsu+9*60*60, dsu+10*60*60)
+				// Ensure the timed event is always in the future relative to now
+				start := now.Add(1 * time.Hour).Unix()
+				end := now.Add(2 * time.Hour).Unix()
+				timed := newEvent("timed", start, end)
 				return []*gocal.Event{allDay, timed}
 			},
 			wantName: "timed",
