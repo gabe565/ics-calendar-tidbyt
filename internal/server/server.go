@@ -11,6 +11,7 @@ import (
 	"gabe565.com/utils/bytefmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -23,6 +24,8 @@ func ListenAndServe(ctx context.Context, conf *config.Config) error {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.GetHead)
+	r.Use(httprate.LimitByIP(10, time.Minute))
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Post("/", ICS())
 
