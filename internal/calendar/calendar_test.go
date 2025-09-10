@@ -29,7 +29,7 @@ func TestNextEvent(t *testing.T) {
 	now := time.Now().In(time.UTC)
 	nowUnix := now.Unix()
 
-	tomorrow := now.Add(24 * time.Hour)
+	tomorrow := now.AddDate(0, 0, 1)
 
 	tests := []struct {
 		name           string

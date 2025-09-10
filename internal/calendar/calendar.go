@@ -70,8 +70,9 @@ func (c *Calendar) Len() int {
 
 func (c *Calendar) Parse() error {
 	parser := gocal.NewParser(c.res.Body)
-	parser.Start = ptr.To(time.Now().AddDate(0, 0, -1).In(c.tz))
-	parser.End = ptr.To(time.Now().AddDate(0, 0, 7).In(c.tz))
+	now := time.Now().In(c.tz)
+	parser.Start = ptr.To(now.AddDate(0, 0, -1))
+	parser.End = ptr.To(now.AddDate(0, 0, 7))
 	parser.AllDayEventsTZ = c.tz
 
 	if err := parser.Parse(); err != nil {
@@ -127,8 +128,8 @@ func (c *Calendar) NextEvent() *Event {
 		Location: event.Location,
 		Detail: EventDetail{
 			IsToday:           dateEqual(now, *event.Start),
-			IsTomorrow:        dateEqual(now.Add(24*time.Hour), *event.Start),
-			IsThisWeek:        now.Add(7 * 24 * time.Hour).After(*event.Start),
+			IsTomorrow:        dateEqual(now.AddDate(0, 0, 1), *event.Start),
+			IsThisWeek:        now.AddDate(0, 0, 7).After(*event.Start),
 			MinutesUntilStart: int(time.Until(*event.Start).Minutes()),
 			MinutesUntilEnd:   int(time.Until(*event.End).Minutes()),
 			HoursToEnd:        int(time.Until(*event.End).Hours()),
