@@ -10,22 +10,20 @@ import (
 
 func ICS() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cal, err := calendar.NewCalendarRequest(r)
+		var params calendar.Request
+		if err := render.Bind(r, &params); err != nil {
+			slog.Error("Failed to read request body", "error", err)
+			_ = render.Render(w, r,
+				calendar.NewErrorResponse(http.StatusBadRequest, "Failed to read request body"),
+			)
+			return
+		}
+
+		cal, err := calendar.LoadCalendar(r.Context(), params)
 		if err != nil {
 			slog.Error("Failed to fetch calendar", "error", err)
 			_ = render.Render(w, r,
 				calendar.NewErrorResponse(http.StatusInternalServerError, "Failed to fetch calendar"),
-			)
-			return
-		}
-		defer func() {
-			_ = cal.Close()
-		}()
-
-		if err := cal.Parse(); err != nil {
-			slog.Error("Failed to parse calendar", "error", err)
-			_ = render.Render(w, r,
-				calendar.NewErrorResponse(http.StatusInternalServerError, "Failed to parse calendar"),
 			)
 			return
 		}

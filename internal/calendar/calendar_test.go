@@ -138,7 +138,7 @@ func TestNextEvent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cal := &Calendar{
-				params: &Request{
+				params: Request{
 					TZ:                   tz,
 					ShowInProgress:       new(tt.showInProgress),
 					IncludeAllDayEvents:  new(tt.includeAllDay),

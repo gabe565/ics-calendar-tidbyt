@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,23 +10,17 @@ import (
 	"time"
 
 	"github.com/apognu/gocal"
-	"github.com/go-chi/render"
 )
 
 var ErrUpstreamStatus = errors.New("upstream status")
 
-func NewCalendarRequest(r *http.Request) (*Calendar, error) {
-	params := &Request{}
-	if err := render.Bind(r, params); err != nil {
-		return nil, err
-	}
-
+func LoadCalendar(ctx context.Context, params Request) (*Calendar, error) {
 	tz, err := time.LoadLocation(params.TZ)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, params.ICSUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, params.ICSUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -34,57 +29,46 @@ func NewCalendarRequest(r *http.Request) (*Calendar, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if res.StatusCode != http.StatusOK {
+	defer func() {
 		_, _ = io.Copy(io.Discard, res.Body)
 		_ = res.Body.Close()
+	}()
+
+	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: %s", ErrUpstreamStatus, res.Status)
 	}
 
-	return &Calendar{
-		params: params,
-		res:    res,
-		tz:     tz,
-	}, nil
+	return Parse(res.Body, params, tz)
 }
 
 type Calendar struct {
-	params *Request
-	res    *http.Response
+	params Request
 	events []*gocal.Event
 	tz     *time.Location
-}
-
-func (c *Calendar) Close() error {
-	if c.res == nil {
-		return nil
-	}
-	_, _ = io.Copy(io.Discard, c.res.Body)
-	return c.res.Body.Close()
 }
 
 func (c *Calendar) Len() int {
 	return len(c.events)
 }
 
-func (c *Calendar) Parse() error {
-	parser := gocal.NewParser(c.res.Body)
-	now := time.Now().In(c.tz)
+func Parse(r io.Reader, params Request, tz *time.Location) (*Calendar, error) {
+	parser := gocal.NewParser(r)
+	now := time.Now().In(tz)
 	parser.Start = new(now.AddDate(0, 0, -1))
 	parser.End = new(now.AddDate(0, 0, 7))
-	parser.AllDayEventsTZ = c.tz
+	parser.AllDayEventsTZ = tz
 
 	if err := parser.Parse(); err != nil {
-		return err
+		return nil, err
 	}
-	_ = c.Close()
 
-	c.events = make([]*gocal.Event, 0, len(parser.Events))
+	cal := &Calendar{params: params, tz: tz}
+	cal.events = make([]*gocal.Event, 0, len(parser.Events))
 	for _, e := range parser.Events {
-		c.events = append(c.events, &e)
+		cal.events = append(cal.events, &e)
 	}
 
-	return nil
+	return cal, nil
 }
 
 func (c *Calendar) NextEvent() *Event {
