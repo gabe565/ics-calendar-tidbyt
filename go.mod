@@ -18,7 +18,7 @@ require (
 	github.com/ChannelMeter/iso8601duration v0.0.0-20150204201828-8da3af7a2a61 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/g4s8/envdoc v1.6.0 // indirect
+	github.com/g4s8/envdoc v1.10.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
