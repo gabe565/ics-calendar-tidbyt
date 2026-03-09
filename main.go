@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"gabe565.com/ics-calendar-tidbyt/internal/config"
 	"gabe565.com/ics-calendar-tidbyt/internal/server"
@@ -29,8 +27,5 @@ func run() error {
 		return err
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
-	defer cancel()
-
-	return server.ListenAndServe(ctx, &conf)
+	return server.ListenAndServe(context.Background(), &conf)
 }

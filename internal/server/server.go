@@ -5,6 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"gabe565.com/ics-calendar-tidbyt/internal/config"
@@ -12,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
-	"golang.org/x/sync/errgroup"
 )
 
 func ListenAndServe(ctx context.Context, conf *config.Config) error {
@@ -36,26 +38,32 @@ func ListenAndServe(ctx context.Context, conf *config.Config) error {
 		MaxHeaderBytes: 100 * bytefmt.KiB,
 	}
 
-	group, ctx := errgroup.WithContext(ctx)
+	errCh := make(chan error, 1)
 
-	group.Go(func() error {
+	go func() {
 		slog.Info("Listening for http connections", "address", conf.ListenAddress)
-		return server.ListenAndServe()
-	})
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
 
-	group.Go(func() error {
-		<-ctx.Done()
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	defer cancel()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+	select {
+	case <-ctx.Done():
+		ctx, cancelTimeout := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelTimeout()
 
-		slog.Info("Gracefully shutting down server")
-		return server.Shutdown(ctx)
-	})
+		ctx, cancelSignal := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+		defer cancelSignal()
 
-	err := group.Wait()
-	if errors.Is(err, context.Canceled) || errors.Is(err, http.ErrServerClosed) {
-		err = nil
+		slog.Info("Gracefully stopping server")
+		if err := server.Shutdown(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return nil
+	case err := <-errCh:
+		return err
 	}
-	return err
 }
