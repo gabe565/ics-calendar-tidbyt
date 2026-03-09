@@ -7,7 +7,6 @@ import (
 	"github.com/apognu/gocal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/utils/ptr"
 )
 
 func newAllDay(day time.Time) *gocal.Event {
@@ -141,8 +140,8 @@ func TestNextEvent(t *testing.T) {
 			cal := &Calendar{
 				params: &Request{
 					TZ:                   tz,
-					ShowInProgress:       ptr.To(tt.showInProgress),
-					IncludeAllDayEvents:  ptr.To(tt.includeAllDay),
+					ShowInProgress:       new(tt.showInProgress),
+					IncludeAllDayEvents:  new(tt.includeAllDay),
 					OnlyShowAllDayEvents: tt.onlyAllDay,
 				},
 				events: tt.build(),

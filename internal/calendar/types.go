@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/go-chi/render"
-	"k8s.io/utils/ptr"
 )
 
 type Event struct {
@@ -48,10 +47,10 @@ type Request struct {
 
 func (i *Request) Bind(*http.Request) error {
 	if i.ShowInProgress == nil {
-		i.ShowInProgress = ptr.To(true)
+		i.ShowInProgress = new(true)
 	}
 	if i.IncludeAllDayEvents == nil {
-		i.IncludeAllDayEvents = ptr.To(true)
+		i.IncludeAllDayEvents = new(true)
 	}
 	return nil
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/apognu/gocal"
 	"github.com/go-chi/render"
-	"k8s.io/utils/ptr"
 )
 
 var ErrUpstreamStatus = errors.New("upstream status")
@@ -71,8 +70,8 @@ func (c *Calendar) Len() int {
 func (c *Calendar) Parse() error {
 	parser := gocal.NewParser(c.res.Body)
 	now := time.Now().In(c.tz)
-	parser.Start = ptr.To(now.AddDate(0, 0, -1))
-	parser.End = ptr.To(now.AddDate(0, 0, 7))
+	parser.Start = new(now.AddDate(0, 0, -1))
+	parser.End = new(now.AddDate(0, 0, 7))
 	parser.AllDayEventsTZ = c.tz
 
 	if err := parser.Parse(); err != nil {

@@ -11,7 +11,6 @@ require (
 	github.com/go-chi/render v1.0.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.20.0
-	k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d
 )
 
 require (
