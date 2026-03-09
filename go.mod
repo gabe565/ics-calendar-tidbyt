@@ -3,7 +3,7 @@ module gabe565.com/ics-calendar-tidbyt
 go 1.26.1
 
 require (
-	gabe565.com/utils v0.0.0-20250302063333-ede73b14282c
+	gabe565.com/utils v0.0.0-20251001054419-00a1424779a7
 	github.com/apognu/gocal v0.9.1
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/go-chi/chi/v5 v5.2.3
