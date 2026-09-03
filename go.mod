@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	gabe565.com/utils v0.0.0-20251001054419-00a1424779a7
 	github.com/apognu/gocal v0.9.1
-	github.com/caarlos0/env/v11 v11.4.0
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/httprate v0.15.0
 	github.com/go-chi/render v1.0.3
