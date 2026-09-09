@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"slices"
 	"time"
-
-	"github.com/apognu/gocal"
 )
 
 var ErrUpstreamStatus = errors.New("upstream status")
@@ -43,7 +41,7 @@ func LoadCalendar(ctx context.Context, params Request) (*Calendar, error) {
 
 type Calendar struct {
 	params Request
-	events []*gocal.Event
+	events []*event
 	tz     *time.Location
 }
 
@@ -52,50 +50,38 @@ func (c *Calendar) Len() int {
 }
 
 func Parse(r io.Reader, params Request, tz *time.Location) (*Calendar, error) {
-	parser := gocal.NewParser(r)
 	now := time.Now().In(tz)
-	parser.Start = new(now.AddDate(0, 0, -1))
-	parser.End = new(now.AddDate(0, 0, 7))
-	parser.AllDayEventsTZ = tz
-
-	if err := parser.Parse(); err != nil {
+	events, err := parse(r, now.AddDate(0, 0, -1), now.AddDate(0, 0, 7), tz)
+	if err != nil {
 		return nil, err
 	}
-
-	cal := &Calendar{params: params, tz: tz}
-	cal.events = make([]*gocal.Event, 0, len(parser.Events))
-	for _, e := range parser.Events {
-		cal.events = append(cal.events, &e)
-	}
-
-	return cal, nil
+	return &Calendar{params: params, events: events, tz: tz}, nil
 }
 
 func (c *Calendar) NextEvent() *Event {
 	now := time.Now().In(c.tz)
 
-	c.events = slices.DeleteFunc(c.events, func(event *gocal.Event) bool {
-		eventIsAllDay := isAllDay(event)
-		return (c.params.OnlyShowAllDayEvents && !eventIsAllDay) ||
-			(!*c.params.IncludeAllDayEvents && eventIsAllDay) ||
+	c.events = slices.DeleteFunc(c.events, func(event *event) bool {
+		return (c.params.OnlyShowAllDayEvents && !event.AllDay) ||
+			(!*c.params.IncludeAllDayEvents && event.AllDay) ||
 			(!*c.params.ShowInProgress && event.Start.Before(now)) ||
 			event.End.Before(now)
 	})
 
-	hasInProgress := *c.params.ShowInProgress && slices.ContainsFunc(c.events, func(event *gocal.Event) bool {
+	hasInProgress := *c.params.ShowInProgress && slices.ContainsFunc(c.events, func(event *event) bool {
 		return event.Start.Before(now) && event.End.After(now)
 	})
 
 	if hasInProgress {
-		c.events = slices.DeleteFunc(c.events, func(event *gocal.Event) bool {
+		c.events = slices.DeleteFunc(c.events, func(event *event) bool {
 			return event.Start.After(now)
 		})
-		slices.SortFunc(c.events, func(a, b *gocal.Event) int {
-			return a.End.Compare(*b.End)
+		slices.SortFunc(c.events, func(a, b *event) int {
+			return a.End.Compare(b.End)
 		})
 	} else {
-		slices.SortFunc(c.events, func(a, b *gocal.Event) int {
-			return a.Start.Compare(*b.Start)
+		slices.SortFunc(c.events, func(a, b *event) int {
+			return a.Start.Compare(b.Start)
 		})
 	}
 
@@ -110,24 +96,16 @@ func (c *Calendar) NextEvent() *Event {
 		End:      event.End.Unix(),
 		Location: event.Location,
 		Detail: EventDetail{
-			IsToday:           dateEqual(now, *event.Start),
-			IsTomorrow:        dateEqual(now.AddDate(0, 0, 1), *event.Start),
-			IsThisWeek:        now.AddDate(0, 0, 7).After(*event.Start),
-			MinutesUntilStart: int(time.Until(*event.Start).Minutes()),
-			MinutesUntilEnd:   int(time.Until(*event.End).Minutes()),
-			HoursToEnd:        int(time.Until(*event.End).Hours()),
+			IsToday:           dateEqual(now, event.Start.In(c.tz)),
+			IsTomorrow:        dateEqual(now.AddDate(0, 0, 1), event.Start.In(c.tz)),
+			IsThisWeek:        now.AddDate(0, 0, 7).After(event.Start),
+			MinutesUntilStart: int(time.Until(event.Start).Minutes()),
+			MinutesUntilEnd:   int(time.Until(event.End).Minutes()),
+			HoursToEnd:        int(time.Until(event.End).Hours()),
 			InProgress:        event.Start.Before(now),
-			IsAllDay:          isAllDay(event),
+			IsAllDay:          event.AllDay,
 		},
 	}
-}
-
-// isAllDay verifies that Start is midnight and End is one second before midnight.
-// All day events can span multiple days, but they always start and end at midnight.
-func isAllDay(e *gocal.Event) bool {
-	h1, m1, s1 := e.Start.Clock()
-	h2, m2, s2 := e.End.Clock()
-	return h1 == 0 && m1 == 0 && s1 == 0 && h2 == 23 && m2 == 59 && s2 == 59
 }
 
 func dateEqual(date1, date2 time.Time) bool {

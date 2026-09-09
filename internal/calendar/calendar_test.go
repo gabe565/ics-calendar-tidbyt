@@ -4,21 +4,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apognu/gocal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newAllDay(day time.Time) *gocal.Event {
+const allDayName = "all-day"
+
+func newAllDay(day time.Time) *event {
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, time.UTC)
-	return &gocal.Event{Summary: "all-day", Start: &start, End: &end}
+	return &event{Summary: allDayName, Start: start, End: end, AllDay: true}
 }
 
-func newEvent(name string, start, end int64) *gocal.Event {
+func newEvent(name string, start, end int64) *event {
 	s := time.Unix(start, 0).In(time.UTC)
 	e := time.Unix(end, 0).In(time.UTC)
-	return &gocal.Event{Summary: name, Start: &s, End: &e}
+	return &event{Summary: name, Start: s, End: e}
 }
 
 func TestNextEvent(t *testing.T) {
@@ -35,7 +36,7 @@ func TestNextEvent(t *testing.T) {
 		showInProgress bool
 		includeAllDay  bool
 		onlyAllDay     bool
-		build          func() []*gocal.Event
+		build          func() []*event
 		wantName       string
 		check          func(t *testing.T, e *Event)
 	}{
@@ -43,16 +44,16 @@ func TestNextEvent(t *testing.T) {
 			name:           "empty returns error",
 			showInProgress: true,
 			includeAllDay:  true,
-			build:          func() []*gocal.Event { return nil },
+			build:          func() []*event { return nil },
 		},
 		{
 			name:           "prefers in-progress when shown",
 			showInProgress: true,
 			includeAllDay:  true,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				inProg := newEvent("in-progress", nowUnix-5*60, nowUnix+30*60)
 				future := newEvent("future", nowUnix+10*60, nowUnix+70*60)
-				return []*gocal.Event{future, inProg}
+				return []*event{future, inProg}
 			},
 			wantName: "in-progress",
 			check: func(t *testing.T, e *Event) {
@@ -64,10 +65,10 @@ func TestNextEvent(t *testing.T) {
 			name:           "picks soonest end among in-progress",
 			showInProgress: true,
 			includeAllDay:  true,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				longer := newEvent("longer", nowUnix-20*60, nowUnix+40*60)
 				shorter := newEvent("shorter", nowUnix-10*60, nowUnix+5*60)
-				return []*gocal.Event{longer, shorter}
+				return []*event{longer, shorter}
 			},
 			wantName: "shorter",
 		},
@@ -75,11 +76,11 @@ func TestNextEvent(t *testing.T) {
 			name:           "ignore in-progress when disabled",
 			showInProgress: false,
 			includeAllDay:  true,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				inProg := newEvent("in-progress", nowUnix-5*60, nowUnix+30*60)
 				future1 := newEvent("future1", nowUnix+15*60, nowUnix+25*60)
 				future2 := newEvent("future2", nowUnix+10*60, nowUnix+20*60)
-				return []*gocal.Event{inProg, future1, future2}
+				return []*event{inProg, future1, future2}
 			},
 			wantName: "future2",
 			check: func(t *testing.T, e *Event) {
@@ -92,13 +93,13 @@ func TestNextEvent(t *testing.T) {
 			showInProgress: true,
 			includeAllDay:  true,
 			onlyAllDay:     true,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				allDay := newAllDay(now)
 				dsu := allDay.Start.Unix()
 				timed := newEvent("timed", dsu+12*60*60, dsu+13*60*60)
-				return []*gocal.Event{timed, allDay}
+				return []*event{timed, allDay}
 			},
-			wantName: "all-day",
+			wantName: allDayName,
 			check: func(t *testing.T, e *Event) {
 				require.NotNil(t, e.Detail)
 				assert.True(t, e.Detail.IsAllDay)
@@ -109,13 +110,13 @@ func TestNextEvent(t *testing.T) {
 			name:           "exclude all-day when disabled",
 			showInProgress: false, // avoid hasInProgress filtering out future events
 			includeAllDay:  false,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				allDay := newAllDay(now)
 				// Ensure the timed event is always in the future relative to now
 				start := now.Add(1 * time.Hour).Unix()
 				end := now.Add(2 * time.Hour).Unix()
 				timed := newEvent("timed", start, end)
-				return []*gocal.Event{allDay, timed}
+				return []*event{allDay, timed}
 			},
 			wantName: "timed",
 		},
@@ -123,15 +124,15 @@ func TestNextEvent(t *testing.T) {
 			name:           "no in-progress sorts by start (all-day first)",
 			showInProgress: true,
 			includeAllDay:  true,
-			build: func() []*gocal.Event {
+			build: func() []*event {
 				// Place both events tomorrow so none are in-progress
 				dayStart := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 0, 0, 0, 0, time.UTC)
 				dayEnd := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 23, 59, 59, 0, time.UTC)
-				allDay := &gocal.Event{Summary: "all-day", Start: &dayStart, End: &dayEnd}
+				allDay := &event{Summary: allDayName, Start: dayStart, End: dayEnd, AllDay: true}
 				timed := newEvent("timed", dayStart.Unix()+15*60*60, dayStart.Unix()+16*60*60)
-				return []*gocal.Event{timed, allDay}
+				return []*event{timed, allDay}
 			},
-			wantName: "all-day",
+			wantName: allDayName,
 		},
 	}
 
