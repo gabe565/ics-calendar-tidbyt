@@ -24,6 +24,34 @@ type event struct {
 	AllDay bool
 }
 
+// parser holds per-parse state shared by the property helpers.
+type parser struct {
+	tz *time.Location
+	// locations caches time.LoadLocation, which reads zoneinfo from disk on
+	// every call and otherwise dominates parse time on large feeds.
+	locations map[string]*time.Location
+}
+
+func newParser(tz *time.Location) *parser {
+	return &parser{
+		tz:        tz,
+		locations: map[string]*time.Location{tz.String(): tz},
+	}
+}
+
+// location resolves a TZID, caching the result for the rest of the parse.
+func (p *parser) location(tzid string) (*time.Location, error) {
+	if loc, ok := p.locations[tzid]; ok {
+		return loc, nil
+	}
+	loc, err := time.LoadLocation(tzid)
+	if err != nil {
+		return nil, fmt.Errorf("unknown TZID %q: %w", tzid, err)
+	}
+	p.locations[tzid] = loc
+	return loc, nil
+}
+
 // parse reads an iCalendar feed and returns every occurrence overlapping
 // [windowStart, windowEnd], with recurring events expanded.
 func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]*event, error) {
@@ -31,6 +59,7 @@ func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]
 	if err != nil {
 		return nil, err
 	}
+	p := newParser(tz)
 
 	vevents := cal.Events()
 
@@ -43,7 +72,7 @@ func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]
 		if rid == nil {
 			continue
 		}
-		t, _, err := parseTimeProp(rid, tz)
+		t, _, err := p.parseTimeProp(rid)
 		if err != nil {
 			continue
 		}
@@ -61,7 +90,7 @@ func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]
 			continue
 		}
 
-		start, end, allDay, err := eventTimes(ve, tz)
+		start, end, allDay, err := p.eventTimes(ve)
 		if err != nil {
 			// Skip a malformed event rather than fail the whole feed.
 			continue
@@ -84,7 +113,7 @@ func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]
 			continue
 		}
 
-		set, err := recurrenceSet(ve, rrule.Value, start, tz)
+		set, err := p.recurrenceSet(ve, rrule.Value, start)
 		if err != nil {
 			continue
 		}
@@ -105,7 +134,7 @@ func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]
 	return events, nil
 }
 
-func recurrenceSet(ve *ics.VEvent, rule string, start time.Time, tz *time.Location) (*rrule.Set, error) {
+func (p *parser) recurrenceSet(ve *ics.VEvent, rule string, start time.Time) (*rrule.Set, error) {
 	opt, err := rrule.StrToROptionInLocation(rule, start.Location())
 	if err != nil {
 		return nil, err
@@ -119,10 +148,10 @@ func recurrenceSet(ve *ics.VEvent, rule string, start time.Time, tz *time.Locati
 	set := &rrule.Set{}
 	set.DTStart(start)
 	set.RRule(r)
-	for _, t := range dateListProps(ve, ics.ComponentPropertyExdate, tz) {
+	for _, t := range p.dateListProps(ve, ics.ComponentPropertyExdate) {
 		set.ExDate(t)
 	}
-	for _, t := range dateListProps(ve, ics.ComponentPropertyRdate, tz) {
+	for _, t := range p.dateListProps(ve, ics.ComponentPropertyRdate) {
 		set.RDate(t)
 	}
 	return set, nil
@@ -130,13 +159,13 @@ func recurrenceSet(ve *ics.VEvent, rule string, start time.Time, tz *time.Locati
 
 // dateListProps parses properties like EXDATE and RDATE, which may appear
 // multiple times and may hold comma-separated lists.
-func dateListProps(ve *ics.VEvent, name ics.ComponentProperty, tz *time.Location) []time.Time {
+func (p *parser) dateListProps(ve *ics.VEvent, name ics.ComponentProperty) []time.Time {
 	var out []time.Time
 	for _, prop := range ve.GetProperties(name) {
 		for v := range strings.SplitSeq(prop.Value, ",") {
-			p := *prop
-			p.Value = v
-			if t, _, err := parseTimeProp(&p, tz); err == nil {
+			single := *prop
+			single.Value = v
+			if t, _, err := p.parseTimeProp(&single); err == nil {
 				out = append(out, t)
 			}
 		}
@@ -148,12 +177,12 @@ var errMissingStart = errors.New("event has no DTSTART")
 
 // eventTimes returns the start and inclusive end of an event, resolving
 // DTEND, DURATION, and the RFC 5545 defaults when both are absent.
-func eventTimes(ve *ics.VEvent, tz *time.Location) (time.Time, time.Time, bool, error) {
+func (p *parser) eventTimes(ve *ics.VEvent) (time.Time, time.Time, bool, error) {
 	startProp := ve.GetProperty(ics.ComponentPropertyDtStart)
 	if startProp == nil {
 		return time.Time{}, time.Time{}, false, errMissingStart
 	}
-	start, allDay, err := parseTimeProp(startProp, tz)
+	start, allDay, err := p.parseTimeProp(startProp)
 	if err != nil {
 		return time.Time{}, time.Time{}, false, err
 	}
@@ -161,7 +190,7 @@ func eventTimes(ve *ics.VEvent, tz *time.Location) (time.Time, time.Time, bool, 
 	var end time.Time
 	switch {
 	case ve.GetProperty(ics.ComponentPropertyDtEnd) != nil:
-		end, _, err = parseTimeProp(ve.GetProperty(ics.ComponentPropertyDtEnd), tz)
+		end, _, err = p.parseTimeProp(ve.GetProperty(ics.ComponentPropertyDtEnd))
 		if err != nil {
 			return time.Time{}, time.Time{}, false, err
 		}
@@ -190,15 +219,16 @@ const (
 )
 
 // parseTimeProp parses a DATE or DATE-TIME property value. Floating times and
-// DATE values are interpreted in tz. Reports whether the value was a DATE.
-func parseTimeProp(prop *ics.IANAProperty, tz *time.Location) (time.Time, bool, error) {
+// DATE values are interpreted in the configured timezone. Reports whether the
+// value was a DATE.
+func (p *parser) parseTimeProp(prop *ics.IANAProperty) (time.Time, bool, error) {
 	value := strings.TrimSpace(prop.Value)
 
-	loc := tz
+	loc := p.tz
 	if tzid, ok := prop.ICalParameters[string(ics.ParameterTzid)]; ok && len(tzid) == 1 {
-		l, err := time.LoadLocation(tzid[0])
+		l, err := p.location(tzid[0])
 		if err != nil {
-			return time.Time{}, false, fmt.Errorf("unknown TZID %q: %w", tzid[0], err)
+			return time.Time{}, false, err
 		}
 		loc = l
 	}
@@ -206,7 +236,7 @@ func parseTimeProp(prop *ics.IANAProperty, tz *time.Location) (time.Time, bool, 
 	v, ok := prop.ICalParameters[string(ics.ParameterValue)]
 	isDate := ok && len(v) == 1 && v[0] == string(ics.ValueDataTypeDate)
 	if isDate || len(value) == len(dateFormat) {
-		t, err := time.ParseInLocation(dateFormat, value, tz)
+		t, err := time.ParseInLocation(dateFormat, value, p.tz)
 		return t, true, err
 	}
 
