@@ -20,13 +20,26 @@ import (
 func ListenAndServe(ctx context.Context, conf *config.Config) error {
 	r := chi.NewRouter()
 	r.Use(middleware.Heartbeat("/ping"))
-	if conf.RealIPHeader {
-		r.Use(middleware.RealIP)
+
+	if conf.TrustedProxies != nil {
+		r.Use(middleware.ClientIPFromXFF(conf.TrustedProxies...))
+	} else {
+		if realIPHeader, err := config.RealIPHeader(); err != nil {
+			return err
+		} else if realIPHeader {
+			slog.Warn(
+				"REAL_IP_HEADER is deprecated and will be removed in a future release, use TRUSTED_PROXIES instead",
+			)
+			r.Use(middleware.ClientIPFromHeader("X-Real-IP"))
+		}
 	}
+
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.GetHead)
-	r.Use(httprate.LimitByIP(10, time.Minute))
+	r.Use(httprate.LimitBy(10, time.Minute, func(r *http.Request) (string, error) {
+		return middleware.GetClientIP(r.Context()), nil
+	}))
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Post("/", ICS())
