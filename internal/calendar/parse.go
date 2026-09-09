@@ -24,18 +24,24 @@ type event struct {
 	AllDay bool
 }
 
-// parser holds per-parse state shared by the property helpers.
+// parser holds the state for a single pass over a feed.
 type parser struct {
-	tz *time.Location
+	tz                     *time.Location
+	windowStart, windowEnd time.Time
 	// locations caches time.LoadLocation, which reads zoneinfo from disk on
 	// every call and otherwise dominates parse time on large feeds.
 	locations map[string]*time.Location
+
+	events []*occurrence
+	// overrides records RECURRENCE-ID instances by UID and original start.
+	overrides map[string]map[int64]struct{}
 }
 
 func newParser(tz *time.Location) *parser {
 	return &parser{
 		tz:        tz,
 		locations: map[string]*time.Location{tz.String(): tz},
+		overrides: make(map[string]map[int64]struct{}),
 	}
 }
 
@@ -52,86 +58,148 @@ func (p *parser) location(tzid string) (*time.Location, error) {
 	return loc, nil
 }
 
-// parse reads an iCalendar feed and returns every occurrence overlapping
-// [windowStart, windowEnd], with recurring events expanded.
+// parse streams an iCalendar feed and returns every occurrence overlapping
+// [windowStart, windowEnd], with recurring events expanded. Only one VEVENT
+// is held in memory at a time.
 func parse(r io.Reader, windowStart, windowEnd time.Time, tz *time.Location) ([]*event, error) {
-	cal, err := ics.ParseCalendar(r)
-	if err != nil {
-		return nil, err
-	}
 	p := newParser(tz)
+	p.windowStart, p.windowEnd = windowStart, windowEnd
 
-	vevents := cal.Events()
-
-	// Overrides are individual instances of a recurring series that were
-	// edited (RECURRENCE-ID). They replace the generated occurrence with the
-	// same UID and original start time.
-	overrides := make(map[string]map[int64]struct{})
-	for _, ve := range vevents {
-		rid := ve.GetProperty(ics.ComponentPropertyRecurrenceId)
-		if rid == nil {
-			continue
+	stream := ics.NewCalendarStream(r)
+	for {
+		line, _, err := stream.ReadLine()
+		if errors.Is(err, io.EOF) {
+			break
 		}
-		t, _, err := p.parseTimeProp(rid)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		uid := ve.Id()
-		if overrides[uid] == nil {
-			overrides[uid] = make(map[int64]struct{})
-		}
-		overrides[uid][t.Unix()] = struct{}{}
-	}
-
-	events := make([]*event, 0, len(vevents))
-	for _, ve := range vevents {
-		if status := ve.GetProperty(ics.ComponentPropertyStatus); status != nil &&
-			strings.EqualFold(status.Value, string(ics.ObjectStatusCancelled)) {
+		if line == nil || len(*line) == 0 {
 			continue
 		}
 
-		start, end, allDay, err := p.eventTimes(ve)
+		prop, err := ics.ParseProperty(*line)
 		if err != nil {
-			// Skip a malformed event rather than fail the whole feed.
+			return nil, err
+		}
+		if prop == nil || prop.IANAToken != "BEGIN" {
 			continue
 		}
-
-		base := event{
-			Summary:  propValue(ve, ics.ComponentPropertySummary),
-			Location: propValue(ve, ics.ComponentPropertyLocation),
-			AllDay:   allDay,
-		}
-		duration := end.Sub(start)
-
-		rrule := ve.GetProperty(ics.ComponentPropertyRrule)
-		if rrule == nil {
-			if !start.After(windowEnd) && !end.Before(windowStart) {
-				e := base
-				e.Start, e.End = start, end
-				events = append(events, &e)
+		switch prop.Value {
+		case string(ics.ComponentVCalendar):
+			continue
+		case string(ics.ComponentVEvent):
+		default:
+			// VTIMEZONE and friends are not needed; consume without building.
+			if err := skipComponent(stream); err != nil {
+				return nil, err
 			}
 			continue
 		}
 
-		set, err := p.recurrenceSet(ve, rrule.Value, start)
+		component, err := ics.GeneralParseComponent(stream, prop)
 		if err != nil {
-			continue
+			return nil, err
 		}
-
-		skip := overrides[ve.Id()]
-		// Widen the lower bound so occurrences that started before the window
-		// but are still in progress are included.
-		for _, occStart := range set.Between(windowStart.Add(-duration), windowEnd, true) {
-			if _, ok := skip[occStart.Unix()]; ok {
-				continue
-			}
-			e := base
-			e.Start, e.End = occStart, occStart.Add(duration)
-			events = append(events, &e)
+		if ve, ok := component.(*ics.VEvent); ok {
+			p.addEvent(ve)
 		}
 	}
 
+	// Overrides may appear after the series they modify, so apply them once
+	// the whole feed has been read.
+	events := make([]*event, 0, len(p.events))
+	for _, o := range p.events {
+		if _, overridden := p.overrides[o.uid][o.seriesKey]; o.generated && overridden {
+			continue
+		}
+		events = append(events, &o.event)
+	}
 	return events, nil
+}
+
+// skipComponent consumes lines through the END of the component whose BEGIN
+// was just read, including any nested components.
+func skipComponent(stream *ics.CalendarStream) error {
+	for depth := 1; depth > 0; {
+		line, _, err := stream.ReadLine()
+		if err != nil {
+			return err
+		}
+		if line == nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(string(*line), "BEGIN:"):
+			depth++
+		case strings.HasPrefix(string(*line), "END:"):
+			depth--
+		}
+	}
+	return nil
+}
+
+// occurrence is an event plus the identity of the series instance it was
+// generated from, so RECURRENCE-ID overrides can be applied afterwards.
+type occurrence struct {
+	event
+	uid       string
+	seriesKey int64
+	generated bool
+}
+
+func (p *parser) addEvent(ve *ics.VEvent) {
+	uid := ve.Id()
+
+	if rid := ve.GetProperty(ics.ComponentPropertyRecurrenceId); rid != nil {
+		if t, _, err := p.parseTimeProp(rid); err == nil {
+			if p.overrides[uid] == nil {
+				p.overrides[uid] = make(map[int64]struct{})
+			}
+			p.overrides[uid][t.Unix()] = struct{}{}
+		}
+	}
+
+	if status := ve.GetProperty(ics.ComponentPropertyStatus); status != nil &&
+		strings.EqualFold(status.Value, string(ics.ObjectStatusCancelled)) {
+		return
+	}
+
+	start, end, allDay, err := p.eventTimes(ve)
+	if err != nil {
+		// Skip a malformed event rather than fail the whole feed.
+		return
+	}
+
+	base := event{
+		Summary:  propValue(ve, ics.ComponentPropertySummary),
+		Location: propValue(ve, ics.ComponentPropertyLocation),
+		AllDay:   allDay,
+	}
+	duration := end.Sub(start)
+
+	rrule := ve.GetProperty(ics.ComponentPropertyRrule)
+	if rrule == nil {
+		if !start.After(p.windowEnd) && !end.Before(p.windowStart) {
+			e := base
+			e.Start, e.End = start, end
+			p.events = append(p.events, &occurrence{event: e, uid: uid})
+		}
+		return
+	}
+
+	set, err := p.recurrenceSet(ve, rrule.Value, start)
+	if err != nil {
+		return
+	}
+
+	// Widen the lower bound so occurrences that started before the window
+	// but are still in progress are included.
+	for _, occStart := range set.Between(p.windowStart.Add(-duration), p.windowEnd, true) {
+		e := base
+		e.Start, e.End = occStart, occStart.Add(duration)
+		p.events = append(p.events, &occurrence{event: e, uid: uid, seriesKey: occStart.Unix(), generated: true})
+	}
 }
 
 func (p *parser) recurrenceSet(ve *ics.VEvent, rule string, start time.Time) (*rrule.Set, error) {
