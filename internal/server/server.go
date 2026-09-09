@@ -37,7 +37,7 @@ func ListenAndServe(ctx context.Context, conf *config.Config) error {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.GetHead)
-	r.Use(httprate.LimitBy(10, time.Minute, func(r *http.Request) (string, error) {
+	r.Use(httprate.LimitBy(conf.LimitRequests, conf.LimitWindow, func(r *http.Request) (string, error) {
 		return middleware.GetClientIP(r.Context()), nil
 	}))
 	r.Use(middleware.Timeout(60 * time.Second))

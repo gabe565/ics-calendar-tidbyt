@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -16,6 +17,10 @@ type Config struct {
 	ListenAddress string `env:"LISTEN_ADDRESS" envDefault:":8080"`
 	// CIDR ranges of reverse proxies whose X-Forwarded-For headers are trusted
 	TrustedProxies []string `env:"TRUSTED_PROXIES"`
+	// HTTP rate limit requests.
+	LimitRequests int `env:"LIMIT_REQUESTS" envDefault:"10"`
+	// HTTP rate limit window.
+	LimitWindow time.Duration `env:"LIMIT_WINDOW" envDefault:"1m"`
 }
 
 // RealIPHeader reports whether the deprecated REAL_IP_HEADER variable is set.
