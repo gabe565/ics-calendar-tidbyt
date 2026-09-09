@@ -15,7 +15,7 @@ require (
 
 require (
 	github.com/ajg/form v1.5.1 // indirect
-	github.com/g4s8/envdoc v1.10.0 // indirect
+	github.com/g4s8/envdoc v1.12.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
