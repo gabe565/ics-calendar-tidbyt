@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	gabe565.com/utils v0.0.0-20260511235214-4059440fa83b
 	github.com/arran4/golang-ical v0.3.6
-	github.com/caarlos0/env/v11 v11.4.0
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/httprate v0.16.0
 	github.com/go-chi/render v1.0.3
