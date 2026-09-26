@@ -21,6 +21,9 @@ func ListenAndServe(ctx context.Context, conf *config.Config) error {
 	r := chi.NewRouter()
 	r.Use(middleware.Heartbeat("/ping"))
 
+	// Header-based middlewares only override the client IP when they find a valid one,
+	// so RemoteAddr is used as the fallback.
+	r.Use(middleware.ClientIPFromRemoteAddr)
 	if conf.TrustedProxies != nil {
 		r.Use(middleware.ClientIPFromXFF(conf.TrustedProxies...))
 	} else {
