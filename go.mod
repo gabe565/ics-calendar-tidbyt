@@ -7,7 +7,7 @@ require (
 	github.com/arran4/golang-ical v0.3.6
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
-	github.com/go-chi/httprate v0.16.0
+	github.com/go-chi/httprate v0.16.1
 	github.com/go-chi/render v1.0.3
 	github.com/stretchr/testify v1.12.1
 	github.com/teambition/rrule-go v1.8.2
